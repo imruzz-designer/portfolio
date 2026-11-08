@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#050506">
+<title>Artwork Viewer | IMRUZZ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="viewer-body">
+<header class="viewer-header"><div class="viewer-header-inner">
+  <a class="brand" href="index.html" aria-label="IMRUZZ home">IMRUZZ<span class="brand-dot">.</span></a>
+  <nav class="viewer-actions" aria-label="Artwork navigation">
+    <a class="button button-outline" id="back-link" href="index.html#work">← Back to Portfolio</a>
+    <a class="button button-primary" id="download-link" href="#" download hidden>Download ↧</a>
+  </nav>
+</div></header>
+<main class="viewer-content">
+  <div class="viewer-heading">
+    <p class="eyebrow">IMRUZZ / PROJECT VIEWER</p>
+    <h1 id="artwork-title">PROJECT <span class="accent">VIEWER.</span></h1>
+    <p id="viewer-status" class="viewer-status" role="status">Loading artwork…</p>
+  </div>
+  <div class="viewer-stage" id="viewer-stage" aria-label="Artwork preview">
+    <button class="viewer-nav viewer-prev" id="prev" type="button" aria-label="Previous image" hidden>←</button>
+    <button class="viewer-nav viewer-next" id="next" type="button" aria-label="Next image" hidden>→</button>
+  </div>
+</main>
+<footer class="viewer-footer"><a class="text-link" id="footer-back" href="index.html#work">← Explore More Work</a></footer>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var file = params.get('file') || '';
+  var $ = function (id) { return document.getElementById(id); };
+  var title = $('artwork-title'), status = $('viewer-status'), stage = $('viewer-stage'),
+      download = $('download-link'), prev = $('prev'), next = $('next');
+
+  /* PDFs open in the dedicated PDF viewer */
+  if (/\.pdf$/i.test(file)) { location.replace('pdf-viewer.html?file=' + encodeURIComponent(file)); return; }
+
+  /* Only local artwork paths are allowed: no remote URLs, no folder traversal */
+  var OK = /^images\/[a-z0-9_\-]+\/[a-z0-9_(). \-]+\.(?:png|jpe?g|webp|gif)$/i;
+  var valid = function (f) { return OK.test(f) && f.indexOf('..') < 0; };
+
+  /* group saved by the portfolio page when an image was clicked */
+  var set = null;
+  try { set = JSON.parse(sessionStorage.getItem('imruzz-set') || 'null'); } catch (e) {}
+  var items = set && set.items ? set.items.filter(function (i) { return i.f && valid(i.f); }) : [];
+  var index = items.findIndex(function (i) { return i.f === file; });
+  if (index < 0) items = [];
+
+  /* back button: go back to the exact scroll spot when we came from the portfolio */
+  var folderSection = { posters: 'posters', logos: 'logos', 'logo-branding': 'logo-branding', packaging: 'packaging', packages: 'packaging', 'package-branding': 'package-branding', 'ui-ux': 'uiux', uiux: 'uiux', 'pdf-thumbnails': 'pdf-portfolios' };
+  var section = (set && set.back) || folderSection[file.split('/')[1]] || 'work';
+  var backUrl = 'index.html#' + section;
+  ['back-link', 'footer-back'].forEach(function (id) {
+    var a = $(id); a.href = backUrl;
+    a.addEventListener('click', function (e) {
+      if (document.referrer && history.length > 1 && /index\.html|\/$/.test(document.referrer.split('#')[0].split('?')[0])) { e.preventDefault(); history.back(); }
+    });
+  });
+
+  function error(msg) {
+    status.textContent = msg;
+    var box = document.createElement('div');
+    box.className = 'viewer-error';
+    box.textContent = 'Please check the file path and filename in your index.html.';
+    stage.appendChild(box);
+  }
+
+  var img = null;
+  function load(f, name, replaceHistory) {
+    var readable = name || f.split('/').pop().replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+    title.textContent = readable;
+    document.title = readable + ' | IMRUZZ';
+    download.href = f; download.hidden = false;
+    status.textContent = items.length ? (index + 1) + ' / ' + items.length + ' • Full image, original proportions' : 'Full image • Original proportions';
+    if (!img) {
+      img = document.createElement('img');
+      img.className = 'viewer-image';
+      img.decoding = 'async';
+      img.onerror = function () { img.remove(); img = null; error('Image not found.'); };
+      stage.insertBefore(img, stage.firstChild);
+    }
+    img.alt = readable;
+    img.src = f;
+    var url = 'media-viewer.html?file=' + encodeURIComponent(f);
+    history[replaceHistory ? 'replaceState' : 'replaceState'](null, '', url);
+    prev.hidden = next.hidden = items.length < 2;
+    /* preload the neighbours so next / previous feel instant */
+    [index + 1, index - 1].forEach(function (i) { if (items[i]) new Image().src = items[i].f; });
+  }
+
+  function go(step) {
+    if (items.length < 2) return;
+    index = (index + step + items.length) % items.length;
+    load(items[index].f, items[index].t);
+  }
+
+  if (!valid(file)) { error('No valid artwork selected.'); return; }
+  load(file, index >= 0 ? items[index].t : '');
+  prev.addEventListener('click', function () { go(-1); });
+  next.addEventListener('click', function () { go(1); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowLeft') go(-1);
+    else if (e.key === 'ArrowRight') go(1);
+    else if (e.key === 'Escape') $('back-link').click();
+  });
+  /* swipe on touch screens */
+  var sx = null;
+  stage.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+  stage.addEventListener('touchend', function (e) {
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx; sx = null;
+    if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+</script>
+</body>
+</html>
